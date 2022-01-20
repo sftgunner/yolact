@@ -592,6 +592,45 @@ def badhash(x):
     x =  ((x >> 16) ^ x) & 0xFFFFFFFF
     return x
 
+def getmetrics(net:Yolact, path:str, detections:Detections=None):
+    frame = torch.from_numpy(cv2.imread(path)).cuda().float()
+    batch = FastBaseTransform()(frame.unsqueeze(0))
+    preds = net(batch)
+    
+    # Hardcode height and width for the time being. Should probably have this be adaptive but eh...
+    h = 1920
+    w = 1080
+    
+    # Hardcode image id: we're just doing one image at a time here so it'll always be 0
+    image_id = 0
+    
+    classes, scores, boxes, masks = postprocess(preds,h,w,crop_masks=args.crop,score_threshold=args.score_threshold)
+    
+    if classes.size(0) == 0:
+            return
+
+    classes = list(classes.cpu().numpy().astype(int))
+    if isinstance(scores, list):
+        box_scores = list(scores[0].cpu().numpy().astype(float))
+        mask_scores = list(scores[1].cpu().numpy().astype(float))
+    else:
+        scores = list(scores.cpu().numpy().astype(float))
+        box_scores = scores
+        mask_scores = scores
+    masks = masks.view(-1, h*w).cuda()
+    boxes = boxes.cuda()
+    
+    boxes = boxes.cpu().numpy()
+    masks = masks.view(-1, h, w).cpu().numpy()
+    for i in range(masks.shape[0]):
+        # Make sure that the bounding box actually makes sense and a mask was produced
+        if (boxes[i, 3] - boxes[i, 1]) * (boxes[i, 2] - boxes[i, 0]) > 0:
+            detections.add_bbox(image_id, classes[i], boxes[i,:],   box_scores[i])
+            detections.add_mask(image_id, classes[i], masks[i,:,:], mask_scores[i])
+            print(detections.bbox_data)
+            detections.dump()
+
+
 def evalimage(net:Yolact, path:str, save_path:str=None):
     frame = torch.from_numpy(cv2.imread(path)).cuda().float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
@@ -871,9 +910,22 @@ def evaluate(net:Yolact, dataset, train_mode=False):
     net.detect.use_fast_nms = args.fast_nms
     net.detect.use_cross_class_nms = args.cross_class_nms
     cfg.mask_proto_debug = args.mask_proto_debug
+    
+    if args.bbox_det_file is not None:
+        detections = Detections()
+        prep_coco_cats()
+        getmetrics(net,args.image,detections)
+        print("[INFO] Not displaying images. See line c. 918 of eval.py")
+        return
+    elif args.mask_det_file is not None:
+        detections = Detections()
+        prep_coco_cats()
+        getmetrics(net,args.image,detections)
+        print("[INFO] Not displaying images. See line c. 923 of eval.py")
+        return
 
     # TODO Currently we do not support Fast Mask Re-scroing in evalimage, evalimages, and evalvideo
-    if args.image is not None:
+    elif args.image is not None:
         if ':' in args.image:
             inp, out = args.image.split(':')
             evalimage(net, inp, out)
@@ -894,7 +946,7 @@ def evaluate(net:Yolact, dataset, train_mode=False):
 
     frame_times = MovingAverage()
     dataset_size = len(dataset) if args.max_images < 0 else min(args.max_images, len(dataset))
-    progress_bar = ProgressBar(30, dataset_size)
+    # progress_bar = ProgressBar(30, dataset_size)
 
     print()
 
@@ -926,6 +978,8 @@ def evaluate(net:Yolact, dataset, train_mode=False):
         dataset_indices.sort(key=lambda x: hashed[x])
 
     dataset_indices = dataset_indices[:dataset_size]
+    
+    print(f"Datset indices are: {dataset_indices}")
 
     try:
         # Main eval loop
@@ -975,7 +1029,7 @@ def evaluate(net:Yolact, dataset, train_mode=False):
                     % (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
 
 
-
+        print("MARK 980")
         if not args.display and not args.benchmark:
             print()
             if args.output_coco_json:

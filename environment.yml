@@ -16,7 +16,7 @@ dependencies:
   - cython 
   - pytorch::torchvision
   - pytorch::pytorch >=1.0.1
-  - cudatoolkit
+  - cudatoolkit=11.3
   - cudnn
   - pytorch::cuda100
   - matplotlib

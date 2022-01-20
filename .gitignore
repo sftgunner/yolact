@@ -158,3 +158,6 @@ vid/
 vidres/
 
 _.py
+web/dets/yolact_base.json
+*.mp4
+web/dets/yolact_base.json
