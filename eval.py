@@ -593,6 +593,7 @@ def badhash(x):
     return x
 
 def getmetrics(net:Yolact, path:str, detections:Detections=None):
+    print(f"Processing path {path}")
     frame = torch.from_numpy(cv2.imread(path)).cuda().float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
@@ -629,6 +630,23 @@ def getmetrics(net:Yolact, path:str, detections:Detections=None):
             detections.add_mask(image_id, classes[i], masks[i,:,:], mask_scores[i])
             print(detections.bbox_data)
             detections.dump()
+
+def getmetrics_folder(net:Yolact, input_folder:str, output_folder:str):
+    if not os.path.exists(output_folder):
+        os.mkdir(output_folder)
+        
+    for p in Path(input_folder).glob('*.jpg'): 
+        path = str(p)
+        name = os.path.basename(path)
+        name = '.'.join(name.split('.')[:-1]) + '.json'
+        out_path = os.path.join(output_folder, name)
+        
+        args.bbox_det_file = out_path
+        
+        detections = Detections()
+        getmetrics(net, path, detections)
+        print(path + ' -> ' + out_path)
+    print('Done.')
 
 
 def evalimage(net:Yolact, path:str, save_path:str=None):
@@ -912,16 +930,25 @@ def evaluate(net:Yolact, dataset, train_mode=False):
     cfg.mask_proto_debug = args.mask_proto_debug
     
     if args.bbox_det_file is not None:
-        detections = Detections()
         prep_coco_cats()
-        getmetrics(net,args.image,detections)
-        print("[INFO] Not displaying images. See line c. 918 of eval.py")
+        if args.image is not None:
+            detections = Detections()
+            getmetrics(net,args.image,detections)
+        else:
+            inp, out = args.images.split(':')
+            getmetrics_folder(net,inp,out)
+        print("[INFO] Not displaying images. See line c. 939 of eval.py")
         return
     elif args.mask_det_file is not None:
-        detections = Detections()
+        
         prep_coco_cats()
-        getmetrics(net,args.image,detections)
-        print("[INFO] Not displaying images. See line c. 923 of eval.py")
+        if args.image is not None:
+            detections = Detections()
+            getmetrics(net,args.image,detections)
+        else:
+            inp, out = args.images.split(':')
+            getmetrics_folder(net,inp,out)
+        print("[INFO] Not displaying images. See line c. 950 of eval.py")
         return
 
     # TODO Currently we do not support Fast Mask Re-scroing in evalimage, evalimages, and evalvideo
