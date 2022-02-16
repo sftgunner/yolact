@@ -628,11 +628,17 @@ def getmetrics(net:Yolact, path:str, detections:Detections=None):
         imagecam = 1
     else:
         raise Exception("Camera could not be identified. Please ensure 'ch$' appears in path where $ is camera number.")
+    # Note to past me - you are an idiot. Some images have a different resolution (cams 9 and 10 in particular!)
+    
+    curimage = Image.open(path)
+    w,h = curimage.size
+    # h = 1920
+    # w = 1080
     
     # Hardcode image id: we're just doing one image at a time here so it'll always be 0
     image_id = 0
     
-    classes, scores, boxes, masks = postprocess(preds,h,w,crop_masks=args.crop,score_threshold=args.score_threshold)
+    classes, scores, boxes, masks = postprocess(preds,w,h,crop_masks=args.crop,score_threshold=args.score_threshold)
     
     if classes.size(0) == 0:
             return
@@ -653,13 +659,19 @@ def getmetrics(net:Yolact, path:str, detections:Detections=None):
     
     for i in range(masks.shape[0]):
         maskcoords = np.where(masks[i])
-        np.set_printoptions(threshold=np.inf)
-        voffset = 4
-        xweighted = (voffset-1)/voffset*(maskcoords[1][len(maskcoords[1])-1])+(maskcoords[1][0])/voffset
-        yweighted = (voffset-1)/voffset*(maskcoords[0][len(maskcoords[1])-1])+(maskcoords[0][0])/voffset
-        
-        
-        curlane = getLaneID.getLaneID(xweighted,yweighted,imagecam,verbose=0)
+        if len(maskcoords[1]) == 0:
+            curlane = 4
+            print(maskcoords)
+            print("Mask appears to be empty?")
+        else:
+            
+            np.set_printoptions(threshold=np.inf)
+            voffset = 4
+            xweighted = (voffset-1)/voffset*(maskcoords[1][len(maskcoords[1])-1])+(maskcoords[1][0])/voffset
+            yweighted = (voffset-1)/voffset*(maskcoords[0][len(maskcoords[1])-1])+(maskcoords[0][0])/voffset
+            
+            
+            curlane = getLaneID.getLaneID(xweighted,yweighted,imagecam,verbose=0)
         
         print(curlane)
         # Make sure that the bounding box actually makes sense and a mask was produced
@@ -677,17 +689,30 @@ def getmetrics_folder(net:Yolact, input_folder:str, output_folder:str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
         
-    for p in Path(input_folder).glob('*.jpg'): 
-        path = str(p)
-        name = os.path.basename(path)
-        name = '.'.join(name.split('.')[:-1]) + '.json'
-        out_path = os.path.join(output_folder, name)
+    for subdir, dirs, files in os.walk(input_folder):
+        for file in files:
+            filename, file_extension = os.path.splitext(file)
+            if (file_extension == ".jpg"):
+                file = os.path.join(subdir,file)
+                # This should probably be changed later on, but this is a hacky solution that works for now
+                out_path = os.path.splitext(file)[0]+'.json'
+                args.bbox_det_file = out_path
         
-        args.bbox_det_file = out_path
+                detections = Detections()
+                getmetrics(net, file, detections)
+                print(file + ' -> ' + out_path)
         
-        detections = Detections()
-        getmetrics(net, path, detections)
-        print(path + ' -> ' + out_path)
+    # for p in Path(input_folder).glob('*.jpg'): 
+    #     path = str(p)
+    #     name = os.path.basename(path)
+    #     name = '.'.join(name.split('.')[:-1]) + '.json'
+    #     out_path = os.path.join(output_folder, name)
+        
+    #     args.bbox_det_file = out_path
+        
+    #     detections = Detections()
+    #     getmetrics(net, path, detections)
+    #     print(path + ' -> ' + out_path)
     print('Done.')
 
 
@@ -978,7 +1003,7 @@ def evaluate(net:Yolact, dataset, train_mode=False):
             getmetrics(net,args.image,detections)
         else:
             inp, out = args.images.split(':')
-            getmetrics_folder(net,inp,out)
+            getmetrics_folder(net,os.path.expanduser(inp),os.path.expanduser(out))
         print("[INFO] Not displaying images. See line c. 939 of eval.py")
         return
     elif args.mask_det_file is not None:
@@ -989,7 +1014,7 @@ def evaluate(net:Yolact, dataset, train_mode=False):
             getmetrics(net,args.image,detections)
         else:
             inp, out = args.images.split(':')
-            getmetrics_folder(net,inp,out)
+            getmetrics_folder(net,os.path.expanduser(inp),os.path.expanduser(out))
         print("[INFO] Not displaying images. See line c. 950 of eval.py")
         return
 
