@@ -29,6 +29,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import cv2
 
+import getLaneID
+
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -109,6 +111,8 @@ def parse_args(argv=None):
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
     parser.add_argument('--detect', default=False, dest='detect', action='store_true',
                         help='Don\'t evauluate the mask branch at all and only do object detection. This only works for --display and --benchmark.')
+    parser.add_argument('--lane-output', default=False, action='store_true',
+                        help='Output object lane rather than object class.')
     parser.add_argument('--display_fps', default=False, dest='display_fps', action='store_true',
                         help='When displaying / saving video, draw the FPS on the frame')
     parser.add_argument('--emulate_playback', default=False, dest='emulate_playback', action='store_true',
@@ -599,8 +603,31 @@ def getmetrics(net:Yolact, path:str, detections:Detections=None):
     preds = net(batch)
     
     # Hardcode height and width for the time being. Should probably have this be adaptive but eh...
-    h = 1920
-    w = 1080
+    curimage = Image.open(path)
+    w,h = curimage.size
+    
+    if "ch10" in path:
+        imagecam = 10
+    elif "ch9" in path:
+        imagecam = 9
+    elif "ch8" in path:
+        imagecam = 8
+    elif "ch7" in path:
+        imagecam = 7
+    elif "ch6" in path:
+        imagecam = 6
+    elif "ch5" in path:
+        imagecam = 5
+    elif "ch4" in path:
+        imagecam = 4
+    elif "ch3" in path:
+        imagecam = 3
+    elif "ch2" in path:
+        imagecam = 2
+    elif "ch1" in path:
+        imagecam = 1
+    else:
+        raise Exception("Camera could not be identified. Please ensure 'ch$' appears in path where $ is camera number.")
     
     # Hardcode image id: we're just doing one image at a time here so it'll always be 0
     image_id = 0
@@ -623,11 +650,26 @@ def getmetrics(net:Yolact, path:str, detections:Detections=None):
     
     boxes = boxes.cpu().numpy()
     masks = masks.view(-1, h, w).cpu().numpy()
+    
     for i in range(masks.shape[0]):
+        maskcoords = np.where(masks[i])
+        np.set_printoptions(threshold=np.inf)
+        voffset = 4
+        xweighted = (voffset-1)/voffset*(maskcoords[1][len(maskcoords[1])-1])+(maskcoords[1][0])/voffset
+        yweighted = (voffset-1)/voffset*(maskcoords[0][len(maskcoords[1])-1])+(maskcoords[0][0])/voffset
+        
+        
+        curlane = getLaneID.getLaneID(xweighted,yweighted,imagecam,verbose=0)
+        
+        print(curlane)
         # Make sure that the bounding box actually makes sense and a mask was produced
         if (boxes[i, 3] - boxes[i, 1]) * (boxes[i, 2] - boxes[i, 0]) > 0:
-            detections.add_bbox(image_id, classes[i], boxes[i,:],   box_scores[i])
-            detections.add_mask(image_id, classes[i], masks[i,:,:], mask_scores[i])
+            if args.lane_output:
+                detections.add_bbox(image_id, curlane, boxes[i,:],   box_scores[i])
+                detections.add_mask(image_id, curlane, masks[i,:,:], mask_scores[i])
+            else:
+                detections.add_bbox(image_id, classes[i], boxes[i,:],   box_scores[i])
+                detections.add_mask(image_id, classes[i], masks[i,:,:], mask_scores[i])
             print(detections.bbox_data)
             detections.dump()
 
